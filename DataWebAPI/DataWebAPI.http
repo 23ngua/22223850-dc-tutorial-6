@@ -1,0 +1,6 @@
+@DataWebAPI_HostAddress = http://localhost:5004
+
+GET {{DataWebAPI_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
