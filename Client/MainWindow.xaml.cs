@@ -12,12 +12,14 @@ using System.Windows.Media;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
 
-using System.ServiceModel;
 using System.Linq.Expressions;
 using System.IO;
 using System.Windows.Media.Imaging;
-using BusinessServer;
 using System.Runtime.Remoting.Messaging;
+
+using API_Classes;
+using Newtonsoft.Json;
+using RestSharp;
 
 namespace Client
 {
@@ -26,7 +28,7 @@ namespace Client
     /// </summary>
     public partial class MainWindow : Window
     {
-        private BusinessServerInterface foob;   // server interface field added
+        private readonly RestClient restClient; // REST connection to Business Web API
 
         public delegate bool SearchDelegate(    // Delegate used to run Business Tier surname search asynchronously
             string lastName,
@@ -41,51 +43,21 @@ namespace Client
         {
             InitializeComponent();
 
-            ChannelFactory<BusinessServerInterface> foobFactory;
-            NetTcpBinding tcp = new NetTcpBinding();
-
-            tcp.MaxReceivedMessageSize = 10 * 1024 * 1024;
-
-            tcp.SendTimeout = TimeSpan.FromMinutes(15);
-
-            string URL = "net.tcp://localhost:8200/BusinessService";
-            foobFactory = new ChannelFactory<BusinessServerInterface>(tcp, URL);
-            foob = foobFactory.CreateChannel();
-
-            ((IContextChannel)foob).OperationTimeout = TimeSpan.FromMinutes(15); 
+            restClient = new RestClient("http://localhost:5005");   // Connect to Business Web API
 
             try
             {
-                // Retrieve total number of records from Business Tier
-                TotalNum.Text = foob.GetNumEntries().ToString();
-            }
-            catch (EndpointNotFoundException)
-            {
-                MessageBox.Show(
-                    "Unable to connect to the Business Server. Please make sure the Data Tier and Business Tier are running.",
-                    "Connection Error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                RestRequest request = new RestRequest("api/values");
 
-                // Prevent searches because Business Server is unavailable
-                GoButton.IsEnabled = false;
-                SearchButton.IsEnabled = false;
-            }
-            catch (TimeoutException)
-            {
-                MessageBox.Show(
-                    "The connection to the Business Server timed out.",
-                    "Connection Error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                RestResponse response = restClient.ExecuteGet(request);
 
-                GoButton.IsEnabled = false;
-                SearchButton.IsEnabled = false;
+                TotalNum.Text = response.Content;
             }
-            catch (CommunicationException)
+            catch (Exception ex)
             {
                 MessageBox.Show(
-                    "A communication error occurred while connecting to the Business Server.",
+                    "Unable to connect to the Business Web API.\n\n" +
+                    ex.Message,
                     "Connection Error",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
@@ -98,12 +70,6 @@ namespace Client
         private void GoButton_Click(object sender, RoutedEventArgs e)  
         {
             int index = 0;
-            string fName = "";
-            string lName = "";
-            int bal = 0;
-            uint acct = 0;
-            uint pin = 0;
-            byte[] profilePicture = null;
 
             if (!Int32.TryParse(IndexNum.Text, out index)) 
             {
@@ -119,24 +85,21 @@ namespace Client
 
             try 
             {
-                foob.GetValuesForEntry( 
-                    index,
-                    out acct, 
-                    out pin, 
-                    out bal, 
-                    out fName, 
-                    out lName,
-                    out profilePicture); 
+                RestRequest request = new RestRequest("api/getall/" + index.ToString());
 
-                FNameBox.Text = fName;
-                LNameBox.Text = lName;
-                BalanceBox.Text = bal.ToString("C");
-                AcctNoBox.Text = acct.ToString();
-                PinBox.Text = pin.ToString("D4");
+                RestResponse response = restClient.ExecuteGet(request);
 
-                if (profilePicture != null && profilePicture.Length > 0)
+                DataIntermed data = JsonConvert.DeserializeObject<DataIntermed>(response.Content);
+
+                FNameBox.Text = data.fname;
+                LNameBox.Text = data.lname;
+                BalanceBox.Text = data.bal.ToString("C");
+                AcctNoBox.Text = data.acct.ToString();
+                PinBox.Text = data.pin.ToString("D4");
+
+                if (data.profilePicture != null && data.profilePicture.Length > 0)
                 {
-                    using (MemoryStream stream = new MemoryStream(profilePicture))
+                    using (MemoryStream stream = new MemoryStream(data.profilePicture))
                     {
                         BitmapImage bitmap = new BitmapImage();
 
@@ -149,9 +112,12 @@ namespace Client
                     }
                 }
             }
-            catch (FaultException<string> ex)
+            catch (Exception ex)
             {
-                MessageBox.Show(ex.Detail);
+                MessageBox.Show("Unable to retrieve the account.\n\n" + ex.Message,
+                    "Request Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
             }
         }
 
@@ -228,55 +194,44 @@ namespace Client
             out string lName,
             out byte[] profilePicture)
         {
-            NetTcpBinding tcp = new NetTcpBinding();  // Creates a separate WCF binding for background search
-            
-            tcp.MaxReceivedMessageSize = 10 * 1024 * 1024;
-            tcp.SendTimeout = TimeSpan.FromMinutes(15);
+            acctNo = 0;
+            pin = 0;
+            bal = 0;
+            fName = "";
+            lName = "";
+            profilePicture = null;
 
-            string url = "net.tcp://localhost:8200/BusinessService";
+            SearchData searchData = new SearchData();
+            searchData.searchStr = lastName;
 
-            ChannelFactory<BusinessServerInterface> searchFactory = new ChannelFactory<BusinessServerInterface>(tcp, url);
+            RestRequest request = new RestRequest("api/search", Method.Post);
 
-            BusinessServerInterface searchChannel = searchFactory.CreateChannel();
+            string json = JsonConvert.SerializeObject(searchData);
 
-            ((IContextChannel)searchChannel).OperationTimeout = TimeSpan.FromMinutes(15);   // Allow enough time for full 100,000 record search
+            request.AddStringBody(json, ContentType.Json);
 
-            try
+            RestResponse response = restClient.Execute(request);
+
+            if (!response.IsSuccessful || string.IsNullOrWhiteSpace(response.Content))
             {
-                // Perform actual RPC on this worker-thread channel
-                return searchChannel.SearchByLastName(
-                    lastName,
-                    out acctNo,
-                    out pin,
-                    out bal,
-                    out fName,
-                    out lName,
-                    out profilePicture);
+                return false;
             }
-            finally
-            {
-                // Clean up the temporary WCF connection
-                IClientChannel clientChannel = (IClientChannel)searchChannel;
 
-                try
-                {
-                    if (clientChannel.State == CommunicationState.Faulted)
-                    {
-                        clientChannel.Abort();
-                        searchFactory.Abort();
-                    }
-                    else
-                    {
-                        clientChannel.Close();
-                        searchFactory.Close();
-                    }
-                }
-                catch
-                {
-                    clientChannel.Abort();
-                    searchFactory.Abort();
-                }
+            DataIntermed data = JsonConvert.DeserializeObject<DataIntermed>(response.Content);
+
+            if (data == null)
+            {
+                return false;
             }
+
+            acctNo = data.acct;
+            pin = data.pin;
+            bal = data.bal;
+            fName = data.fname;
+            lName = data.lname;
+            profilePicture = data.profilePicture;
+
+            return true;
         }
 
         // Runs on worker thread after asynchronous surname search finishes
@@ -336,28 +291,15 @@ namespace Client
                     }));
                 }
             }
-            catch (TimeoutException)
+            catch (Exception ex)
             {
-                // Handle RPC timeout without crashing Client
                 Dispatcher.Invoke(new Action(() =>
                 {
-                    MessageBox.Show("The search timed out before it could finish.", "Search Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                }));
-            }
-            catch (FaultException<string> ex)
-            {
-                // Display the validation fault which is returned by the Business Tier
-                Dispatcher.Invoke(new Action(() =>
-                {
-                    MessageBox.Show(ex.Detail, "Search Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                }));
-            }
-            catch (CommunicationException)
-            {
-                // Hnadle failed or lost WCF connection
-                Dispatcher.Invoke(new Action(() =>
-                {
-                    MessageBox.Show("A communication error occurred while searching.", "Search Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(
+                        "An error occurred while searching.\n\n" + ex.Message,
+                        "Search Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
                 }));
             }
             finally
