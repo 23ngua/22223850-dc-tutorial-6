@@ -7,6 +7,6 @@ namespace API_Classes
     // Data sent from GUI to the Business API for surname searches
     public class SearchData
     {
-        public string searhStr;
+        public string searchStr;
     }
 }
