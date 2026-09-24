@@ -14,18 +14,37 @@ namespace DataWebAPI.Controllers
 
         // GET: api/getall/2
         [HttpGet("{index}")]
-        public DataIntermed Get(int index)
+        public IActionResult Get(int index)
         {
-            DataIntermed data = new DataIntermed();
+            try
+            {
+                // Ensure requested database index is valid
+                if (index < 0 || index >= database.GetNumRecords())
+                {
+                    throw new ArgumentOutOfRangeException(nameof(index), "The requested account index is outside the valid range.");
+                }
 
-            data.acct = database.GetAcctNoByIndex(index);
-            data.pin = database.GetPINByIndex(index);
-            data.bal = database.GetBalanceByIndex(index);
-            data.fname = database.GetFirstNameByIndex(index);
-            data.lname = database.GetLastNameByIndex(index);
-            data.profilePicture = database.GetProfilePictureByIndex(index);
+                DataIntermed data = new DataIntermed();
 
-            return data;
+                data.acct = database.GetAcctNoByIndex(index);
+                data.pin = database.GetPINByIndex(index);
+                data.bal = database.GetBalanceByIndex(index);
+                data.fname = database.GetFirstNameByIndex(index);
+                data.lname = database.GetLastNameByIndex(index);
+                data.profilePicture = database.GetProfilePictureByIndex(index);
+
+                return Ok(data);
+            }
+            catch (Exception ex)
+            {
+                // Convert exception information into JSON-safe data
+                ErrorData error = new ErrorData();
+
+                error.exceptionType = ex.GetType().Name;
+                error.message = ex.Message;
+
+                return BadRequest(error);
+            }
         }
     }
 }

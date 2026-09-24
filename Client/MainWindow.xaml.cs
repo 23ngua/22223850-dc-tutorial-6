@@ -9,6 +9,7 @@ using System.Windows.Media.Imaging;
 using API_Classes;
 using Newtonsoft.Json;
 using RestSharp;
+using System.Web.WebSockets;
 
 namespace Client
 {
@@ -39,9 +40,21 @@ namespace Client
 
                 RestResponse response = await restClient.ExecuteGetAsync(request);
 
-                if (!response.IsSuccessful || string.IsNullOrWhiteSpace(response.Content))
+                if (string.IsNullOrWhiteSpace(response.Content))
                 {
-                    throw new Exception("The Business Web API did not return a valid response.");
+                    throw new Exception("The Business Web API returned an empty response.");
+                }
+
+                if (!response.IsSuccessful)
+                {
+                    ErrorData error = JsonConvert.DeserializeObject<ErrorData>(response.Content);
+
+                    if (error != null)
+                    {
+                        throw new Exception(error.exceptionType + ": " + error.message);
+                    }
+
+                    throw new Exception("The Business Web API returned an error response.");
                 }
 
                 TotalNum.Text = response.Content;
@@ -72,13 +85,13 @@ namespace Client
                 MessageBox.Show("Please enter a valid numeric index."); 
                 return;
             }
-
+            
             if (index < 0 || index >= int.Parse(TotalNum.Text))
             {
                 MessageBox.Show("Please enter an index between 0 and " + (int.Parse(TotalNum.Text) - 1) + ".");
                 return;
             }
-
+            
             GoButton.IsEnabled = false;
             SearchButton.IsEnabled = false;
 
@@ -88,16 +101,28 @@ namespace Client
 
                 RestResponse response = await restClient.ExecuteGetAsync(request);
 
-                if (!response.IsSuccessful || string.IsNullOrWhiteSpace(response.Content))
+                if (string.IsNullOrWhiteSpace(response.Content))
                 {
-                    throw new Exception("The Business Web API did not return a valid account.");
+                    throw new Exception("The Business Web API returned an empty response.");
+                }
+
+                if (!response.IsSuccessful)
+                {
+                    ErrorData error = JsonConvert.DeserializeObject<ErrorData>(response.Content);
+
+                    if (error != null)
+                    {
+                        throw new Exception(error.exceptionType + ": " + error.message);
+                    }
+
+                    throw new Exception("The Business Web API returned an error response.");
                 }
 
                 DataIntermed data = JsonConvert.DeserializeObject<DataIntermed>(response.Content);
 
                 if (data == null)
                 {
-                    throw new Exception("The account response could not be");
+                    throw new Exception("The account response could not be deserialized.");
                 }
 
                 FNameBox.Text = data.fname;
@@ -251,12 +276,37 @@ namespace Client
 
             RestResponse response = await restClient.ExecutePostAsync(request);
 
-            if (!response.IsSuccessful || string.IsNullOrWhiteSpace(response.Content))
+            // No matching surname - return 204 No Content
+            if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
             {
                 return null;
             }
 
+            if (string.IsNullOrWhiteSpace(response.Content))
+            {
+                throw new Exception("The Business Web API returned an empty response.");
+            }
+
+            // Error response - deserialize ErrorData
+            if (!response.IsSuccessful)
+            {
+                ErrorData error = JsonConvert.DeserializeObject<ErrorData>(response.Content);
+
+                if (error != null)
+                {
+                    throw new Exception(error.exceptionType + ": " + error.message);
+                }
+
+                throw new Exception("The Business Web API returned an error response.");
+            }
+
+            // Successful response - deserialize DataIntermed
             DataIntermed data = JsonConvert.DeserializeObject<DataIntermed>(response.Content);
+
+            if (data == null)
+            {
+                throw new Exception("The search response could not be deserialized.");
+            }
 
             return data;
         }
