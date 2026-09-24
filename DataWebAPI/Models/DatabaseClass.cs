@@ -62,7 +62,7 @@
             return dataStruct[index].lastName;
         }
 
-        public byte[] GetProfilePictureByIndex(int index)
+        public byte[]? GetProfilePictureByIndex(int index)
         {
             return dataStruct[index].profilePicture;
         }

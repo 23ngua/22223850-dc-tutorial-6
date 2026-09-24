@@ -9,7 +9,6 @@ using System.Windows.Media.Imaging;
 using API_Classes;
 using Newtonsoft.Json;
 using RestSharp;
-using System.Web.WebSockets;
 
 namespace Client
 {

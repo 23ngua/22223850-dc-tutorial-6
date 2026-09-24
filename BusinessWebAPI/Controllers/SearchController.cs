@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Mvc;
 using API_Classes;
 using Newtonsoft.Json;
 using RestSharp;
-using Microsoft.OpenApi.Models;
 
 namespace BusinessWebAPI.Controllers
 {

@@ -8,7 +8,7 @@
         public int balance;
         public string firstName;
         public string lastName;
-        public byte[] profilePicture;
+        public byte[]? profilePicture;
 
         public DataStruct()
         {
